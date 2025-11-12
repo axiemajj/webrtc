@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>WebRTC STUN Example</title>
+</head>
+<body>
+  <h2>🌐 WebRTC STUN Example (No Credentials)</h2>
+
+  <button id="startBtn">Create Connection</button>
+  <pre id="log"></pre>
+
+  <script>
+    const logEl = document.getElementById("log");
+    const startBtn = document.getElementById("startBtn");
+
+    // Helper for logging
+    function log(message) {
+      console.log(message);
+      logEl.textContent += message + "\n";
+    }
+
+    startBtn.onclick = async () => {
+      log("Creating RTCPeerConnection...");
+
+      // ✅ STUN-only configuration (no credentials)
+      const config = {
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" } // public STUN server
+        ]
+      };
+
+      const pc = new RTCPeerConnection(config);
+
+      // Log discovered ICE candidates
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          log("New ICE candidate:\n" + JSON.stringify(event.candidate, null, 2));
+        } else {
+          log("ICE gathering finished ✅");
+        }
+      };
+
+      // Just create an SDP offer (we won't send it anywhere)
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      log("Created SDP Offer:\n" + offer.sdp);
+
+      // Wait until ICE gathering completes
+      await new Promise((resolve) => {
+        pc.onicegatheringstatechange = () => {
+          if (pc.iceGatheringState === "complete") resolve();
+        };
+      });
+
+      log("Final Local Description (contains all gathered candidates):\n");
+      log(JSON.stringify(pc.localDescription, null, 2));
+
+      pc.close();
+      log("Connection closed.");
+    };
+  </script>
+</body>
+</html>
