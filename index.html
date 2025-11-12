@@ -2,63 +2,109 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>WebRTC STUN Example</title>
+  <title>Simple WebRTC Chat (No Server)</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    textarea { width: 100%; height: 100px; }
+    pre { background: #f0f0f0; padding: 10px; overflow: auto; }
+    #chatLog { height: 150px; }
+  </style>
 </head>
 <body>
-  <h2>🌐 WebRTC STUN Example (No Credentials)</h2>
+  <h2>💬 Simple WebRTC Chat (STUN only, no server)</h2>
 
-  <button id="startBtn">Create Connection</button>
-  <pre id="log"></pre>
+  <button id="createOffer">1️⃣ Create Offer</button>
+  <button id="createAnswer">2️⃣ Create Answer</button>
+  <button id="setAnswer">3️⃣ Set Remote Answer</button>
+  <br><br>
+
+  <label>Offer / Answer Exchange</label>
+  <textarea id="sdp" placeholder="Paste Offer or Answer here..."></textarea><br>
+
+  <h3>Chat</h3>
+  <div id="chatLog" style="border:1px solid #ccc; padding:10px; overflow:auto;"></div>
+  <input id="msgInput" placeholder="Type a message..." />
+  <button id="sendBtn">Send</button>
 
   <script>
-    const logEl = document.getElementById("log");
-    const startBtn = document.getElementById("startBtn");
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }] // ✅ STUN only, no creds
+    });
 
-    // Helper for logging
-    function log(message) {
-      console.log(message);
-      logEl.textContent += message + "\n";
+    let dataChannel;
+
+    const createOfferBtn = document.getElementById("createOffer");
+    const createAnswerBtn = document.getElementById("createAnswer");
+    const setAnswerBtn = document.getElementById("setAnswer");
+    const sdpTextarea = document.getElementById("sdp");
+    const chatLog = document.getElementById("chatLog");
+    const msgInput = document.getElementById("msgInput");
+    const sendBtn = document.getElementById("sendBtn");
+
+    function log(msg, type = "info") {
+      const el = document.createElement("div");
+      el.textContent = msg;
+      if (type === "self") el.style.color = "blue";
+      if (type === "peer") el.style.color = "green";
+      chatLog.appendChild(el);
+      chatLog.scrollTop = chatLog.scrollHeight;
     }
 
-    startBtn.onclick = async () => {
-      log("Creating RTCPeerConnection...");
+    // When a remote peer connects and creates a DataChannel
+    pc.ondatachannel = (event) => {
+      dataChannel = event.channel;
+      dataChannel.onmessage = (e) => log("Peer: " + e.data, "peer");
+      log("✅ Data channel connected!");
+    };
 
-      // ✅ STUN-only configuration (no credentials)
-      const config = {
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" } // public STUN server
-        ]
-      };
+    // Collect ICE candidates
+    const candidates = [];
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        candidates.push(event.candidate);
+      } else {
+        // ICE gathering done
+        sdpTextarea.value = JSON.stringify(pc.localDescription);
+      }
+    };
 
-      const pc = new RTCPeerConnection(config);
+    // 1️⃣ Create an offer (for Peer A)
+    createOfferBtn.onclick = async () => {
+      dataChannel = pc.createDataChannel("chat");
+      dataChannel.onmessage = (e) => log("Peer: " + e.data, "peer");
+      dataChannel.onopen = () => log("✅ Data channel open!");
 
-      // Log discovered ICE candidates
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          log("New ICE candidate:\n" + JSON.stringify(event.candidate, null, 2));
-        } else {
-          log("ICE gathering finished ✅");
-        }
-      };
-
-      // Just create an SDP offer (we won't send it anywhere)
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
+      log("📤 Offer created! Copy the text below and send it to your peer.");
+    };
 
-      log("Created SDP Offer:\n" + offer.sdp);
+    // 2️⃣ Create an answer (for Peer B)
+    createAnswerBtn.onclick = async () => {
+      const offer = JSON.parse(sdpTextarea.value);
+      await pc.setRemoteDescription(offer);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      log("📤 Answer created! Copy the text below and send it back to your peer.");
+    };
 
-      // Wait until ICE gathering completes
-      await new Promise((resolve) => {
-        pc.onicegatheringstatechange = () => {
-          if (pc.iceGatheringState === "complete") resolve();
-        };
-      });
+    // 3️⃣ Set remote answer (for Peer A)
+    setAnswerBtn.onclick = async () => {
+      const answer = JSON.parse(sdpTextarea.value);
+      await pc.setRemoteDescription(answer);
+      log("✅ Remote answer set! You are now connected!");
+    };
 
-      log("Final Local Description (contains all gathered candidates):\n");
-      log(JSON.stringify(pc.localDescription, null, 2));
-
-      pc.close();
-      log("Connection closed.");
+    // 📨 Send a message over DataChannel
+    sendBtn.onclick = () => {
+      const msg = msgInput.value;
+      if (dataChannel && dataChannel.readyState === "open") {
+        dataChannel.send(msg);
+        log("You: " + msg, "self");
+        msgInput.value = "";
+      } else {
+        log("⚠️ Data channel not open yet!");
+      }
     };
   </script>
 </body>
